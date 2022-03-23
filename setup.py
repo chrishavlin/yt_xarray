@@ -41,7 +41,7 @@ setup(
     packages=find_packages(include=['yt_xarray', 'yt_xarray.*']),
     test_suite='tests',
     tests_require=test_requirements,
-    url='https://github.com/chrishavlin/yt_xarray',
+    url='https://github.com/data-exp-lab/yt_xarray',
     version='0.1.0',
     zip_safe=False,
 )
