@@ -1,9 +1,11 @@
 import abc
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
+import xarray as xr
 from aglio import coordinate_transformations as ag_ct
 from numpy.typing import ArrayLike
+from yt.utilities.linear_interpolators import TrilinearFieldInterpolator
 
 
 class Transformation(abc.ABC):
@@ -43,6 +45,9 @@ class Transformation(abc.ABC):
 
     def to_normalized_native(self, coords: List[ArrayLike]):
         coords_native = self.to_native(coords)
+        return self.normalize_native(coords_native)
+
+    def normalize_native(self, coords_native: List[ArrayLike]):
         for idim in range(self.ndim):
             coords_native[idim] = self._linear_normalization(
                 coords_native[idim], self.bbox[idim]
@@ -84,31 +89,61 @@ class Sampler(abc.ABC):
     to be instantiated directly
     """
 
-    def __init__(self, ndims: int):
-        self.ndims = ndims
+    ndims: int
 
-    @abc.abstractmethod
-    def sample_field(self, field_name: str, transformed_coordinates: List[ArrayLike]):
-        """must return array of points at the transformed coordinates"""
-
-    @abc.abstractmethod
-    def get_native_coordinates(self, transformed_coordinates: List[ArrayLike]):
-        """provide a method to go from the transformed to the native coordinates"""
-
-
-class Cartesian_3D_KD_Tree(Sampler):
-    def __init__(self, transformation_function: Callable):
-        super().__init__(3)
+    def __init__(self, transformation: Transformation):
+        self.transformation = transformation
 
     def _validate_coordiantes(self, coords: List[ArrayLike]):
         assert len(coords) == self.ndims
-        for xyz in coords:
-            assert xyz.shape == coords[0].shape
+        for coord in coords:
+            assert coord.shape == coords[0].shape
 
-    def get_native_coordinates(self, transformed_coordinates: List[ArrayLike]):
-        x, y, z = transformed_coordinates
+    @abc.abstractmethod
+    def sample_field(self, field_name: str, coords: List[ArrayLike]):
+        """must return array of points at the transformed coordinates"""
 
-    def sample_field(self, field_name: str, transformed_coordinates: List[ArrayLike]):
-        self._validate_coordiantes(transformed_coordinates)
 
-        x, y, z = transformed_coordinates
+class Cartesian_3D_xr_Sampler(Sampler):
+    ndims = 3
+
+    def __init__(
+        self, transformation: Transformation, ds_xr: xr.Dataset, field_subset: List[str]
+    ):
+        super().__init__(transformation)
+
+        dims = None
+        for field in field_subset:
+            var = ds_xr.data_vars[field]
+            if dims is None:
+                dims = var.dims
+            assert var.dims == dims
+
+        native_coords = [ds_xr.coords[dim].to_numpy() for dim in dims]
+        table = ds_xr.data_vars[field].to_numpy()
+        field_names = dims
+        self.dims = dims
+        self.ds_xr = ds_xr
+        self.field_subset = field_subset
+        self.current_field = field_subset[0]
+        self.interpolator = TrilinearFieldInterpolator(
+            table, native_coords, field_names, truncate=True
+        )
+
+    def sample_field(self, field, coords: List[ArrayLike]):
+        x, y, z = coords
+        native_coords = self.transformation.to_native(x, y, z)
+        data_obj_dummy = {}
+        for idim in range(self.ndims):
+            data_obj_dummy[self.dims[idim]] = native_coords[idim]
+
+        if field not in self.field_subset:
+            raise RuntimeError("bad")
+
+        if field != self.current_field:
+            self.current_field = field
+            self.interpolator.table = (
+                self.ds_xr.data_vars[field].to_numpy().astype("float64")
+            )
+
+        return self.interpolator(data_obj_dummy)
