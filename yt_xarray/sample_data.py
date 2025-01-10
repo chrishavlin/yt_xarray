@@ -2,11 +2,12 @@ from typing import Mapping
 
 import numpy as np
 import xarray as xr
-
+from numpy import typing as npt
+from typing import Callable
 
 def load_random_xr_data(
     fields: Mapping[str, tuple[str, ...]],
-    dims: Mapping[str, tuple[int | float, int | float, int]],
+    dims: Mapping[str, tuple[int | float, int | float, int] | npt.NDArray],
     length_unit: str | None = None,
 ) -> xr.Dataset:
     """
@@ -22,6 +23,8 @@ def load_random_xr_data(
         {'x': (0, 1, 10), 'y': (0, 2, 15)} would create an x and y dimension
         that goes from 0 to 1 with 10 elements for x, 0 to 2 with 15 elements
         for y.
+    length_unit
+        optional string to indicate length unit for dimensions.
 
     Returns
     -------
@@ -30,9 +33,18 @@ def load_random_xr_data(
         and dimensions.
 
     """
+
     available_coords = {}
     for dim_name, dim_range in dims.items():
-        available_coords[dim_name] = np.linspace(*dim_range)
+        if isinstance(dim_range, np.ndarray):
+            available_coords[dim_name] = dim_range
+        elif isinstance(dim_range, tuple):
+            available_coords[dim_name] = np.linspace(*dim_range)
+        else:
+            msg = f"unexpected type for `dim_range`: {dim_range} must be a mapping" \
+                  f"from dimension to either a tuple for (start, stop, size) or " \
+                  f"a numpy array."
+            raise RuntimeError(msg)
 
     data = {}
     for field, field_dims in fields.items():
@@ -44,10 +56,8 @@ def load_random_xr_data(
                     f"{dim_name} is specified as a dimension for "
                     f"{field} but does not exist in the dims argument!"
                 )
-
-            sz.append(dims[dim_name][2])
             coords[dim_name] = available_coords[dim_name]
-
+            sz.append(coords[dim_name].size)
         data[field] = xr.DataArray(np.random.rand(*sz), coords=coords, dims=field_dims)
 
     attrs = {}

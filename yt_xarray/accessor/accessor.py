@@ -12,6 +12,8 @@ from yt_xarray.accessor._readers import _get_xarray_reader
 from yt_xarray.accessor._xr_to_yt import _load_full_field_from_xr
 from yt_xarray.utilities._grid_decomposition import ChunkInfo
 from yt_xarray.utilities.logging import ytxr_log
+from yt_xarray.utilities._utilities import _yt_version
+from packaging.version import Version
 
 
 @xr.register_dataset_accessor("yt")
@@ -131,7 +133,7 @@ class YtAccessor:
             ds_yt = _load_single_grid(
                 self._obj, sel_info, geom, use_callable, fields, length_unit, **kwargs
             )
-        elif sel_info.grid_type == _xr_to_yt._GridType.STRETCHED:
+        elif sel_info.grid_type == _xr_to_yt._GridType.STRETCHED and _yt_version < Version('4.4.0'):
             raise NotImplementedError(
                 "Stretched grids cannot set the chunksizes argument."
             )

@@ -280,3 +280,9 @@ def _import_optional_dep(
         if msg is None:
             msg = f"This functionality requires {name}. Install it and try again."
         raise ImportError(msg)
+
+
+from packaging.version import Version
+import yt
+
+_yt_version = Version(yt.__version__)
